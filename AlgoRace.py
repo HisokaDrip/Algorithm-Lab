@@ -1,19 +1,19 @@
 """
 ALGO-RACER: Ultimate Pathfinding Visualizer
-Set 1: Core Engine, Constants, and Node/Grid Structure
+Fixed Version
 """
 
 import pygame
 import math
 import random
-from queue import PriorityQueue, Queue
+import sys  # Added for safe exiting
+from queue import PriorityQueue
 from collections import deque
-import time
 
 # --- CONSTANTS & CONFIGURATION ---
 WIDTH = 1000
 HEIGHT = 800
-ROWS = 50  # Results in a 50x50 grid (2500 nodes)
+ROWS = 50  # Results in a 50x50 grid
 GRID_WIDTH = 800  # The grid takes up the left side
 UI_WIDTH = 200  # UI panel on the right
 WIN_TITLE = "Algo-Racer: 50+ Algorithm Visualizer"
@@ -40,11 +40,6 @@ HEADER_FONT = pygame.font.SysFont('arial', 20, bold=True)
 
 
 class Node:
-    """
-    Represents a single cell in the grid.
-    Holds state: Start, End, Barrier, Open, Closed, Path.
-    """
-
     def __init__(self, row, col, width, total_rows):
         self.row = row
         self.col = col
@@ -54,12 +49,11 @@ class Node:
         self.neighbor = []
         self.width = width
         self.total_rows = total_rows
-        self.weight = 1  # For weighted algorithms
+        self.weight = 1
 
     def get_pos(self):
         return self.row, self.col
 
-    # --- State Checks ---
     def is_closed(self):
         return self.color == RED
 
@@ -75,7 +69,6 @@ class Node:
     def is_end(self):
         return self.color == TURQUOISE
 
-    # --- State Setters ---
     def reset(self):
         self.color = WHITE
         self.weight = 1
@@ -84,7 +77,6 @@ class Node:
         self.color = ORANGE
 
     def make_closed(self):
-        # Don't overwrite start/end colors
         if not self.is_start() and not self.is_end():
             self.color = RED
 
@@ -106,12 +98,7 @@ class Node:
         pygame.draw.rect(win, self.color, (self.x, self.y, self.width, self.width))
 
     def update_neighbors(self, grid, diagonal=False):
-        """
-        Populates the self.neighbor list based on adjacent cells.
-        Supports switching between 4-way and 8-way (diagonal) movement.
-        """
         self.neighbor = []
-
         # DOWN
         if self.row < self.total_rows - 1 and not grid[self.row + 1][self.col].is_barrier():
             self.neighbor.append(grid[self.row + 1][self.col])
@@ -125,20 +112,27 @@ class Node:
         if self.col > 0 and not grid[self.row][self.col - 1].is_barrier():
             self.neighbor.append(grid[self.row][self.col - 1])
 
+        # Simple implementation for Diagonal (Set 2 refinement)
         if diagonal:
-            # Add diagonal checks here (omitted for brevity in Set 1, can enable later)
-            pass
+            # Down-Right
+            if self.row < self.total_rows - 1 and self.col < self.total_rows - 1 and not grid[self.row + 1][
+                self.col + 1].is_barrier():
+                self.neighbor.append(grid[self.row + 1][self.col + 1])
+            # Up-Right
+            if self.row > 0 and self.col < self.total_rows - 1 and not grid[self.row - 1][self.col + 1].is_barrier():
+                self.neighbor.append(grid[self.row - 1][self.col + 1])
+            # Down-Left
+            if self.row < self.total_rows - 1 and self.col > 0 and not grid[self.row + 1][self.col - 1].is_barrier():
+                self.neighbor.append(grid[self.row + 1][self.col - 1])
+            # Up-Left
+            if self.row > 0 and self.col > 0 and not grid[self.row - 1][self.col - 1].is_barrier():
+                self.neighbor.append(grid[self.row - 1][self.col - 1])
 
     def __lt__(self, other):
-        # Necessary for PriorityQueue comparison
         return False
 
 
 class GridManager:
-    """
-    Manages the 2D array of Nodes and handles Grid operations.
-    """
-
     def __init__(self, rows, width):
         self.rows = rows
         self.width = width
@@ -164,16 +158,13 @@ class GridManager:
                 pygame.draw.line(win, GREY, (j * gap, 0), (j * gap, self.width))
 
     def draw(self, win):
-        # Draw nodes
         for row in self.grid:
             for node in row:
                 node.draw(win)
-        # Draw lines
         self.draw_grid_lines(win)
         pygame.display.update()
 
     def get_clicked_pos(self, pos):
-        """Translates mouse pixel coordinates to grid row/col"""
         gap = self.width // self.rows
         y, x = pos
         row = y // gap
@@ -181,77 +172,50 @@ class GridManager:
         return row, col
 
     def clear_path(self):
-        """Keeps barriers/start/end but clears the visualization colors"""
         for row in self.grid:
             for node in row:
                 if node.is_open() or node.is_closed() or node.color == PURPLE:
                     node.reset()
 
     def clear_all(self):
-        """Resets entire board"""
         self.start_node = None
         self.end_node = None
         self.grid = self.make_grid()
 
-    def update_all_neighbors(self):
-        for row in self.grid:
-            for node in row:
-                node.update_neighbors(self.grid)
 
-
-"""
-ALGO-RACER: Set 2
-The Algorithm Engine
-Contains: Heuristics, Path Reconstruction, and Core Solvers
-"""
-import pygame
-import math
-from queue import PriorityQueue, Queue
-from collections import deque
-
+# --- ALGORITHM ENGINE ---
 
 class Heuristics:
-    """
-    The math brains. Changing these creates different algorithm variants.
-    """
-
     @staticmethod
     def null_h(p1, p2):
-        """Returns 0. Turns A* into Dijkstra."""
         return 0
 
     @staticmethod
     def manhattan(p1, p2):
-        """L1 Norm: Great for 4-way grid movement."""
         x1, y1 = p1
         x2, y2 = p2
         return abs(x1 - x2) + abs(y1 - y2)
 
     @staticmethod
     def euclidean(p1, p2):
-        """L2 Norm: Shortest straight line (hypotenuse)."""
         x1, y1 = p1
         x2, y2 = p2
         return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
 
     @staticmethod
     def chebyshev(p1, p2):
-        """L-Infinity Norm: Best for 8-way movement (King's moves)."""
         x1, y1 = p1
         x2, y2 = p2
         return max(abs(x1 - x2), abs(y1 - y2))
 
     @staticmethod
     def octile(p1, p2):
-        """More precise for 8-way movement with diagonal costs."""
         x1, y1 = p1
         x2, y2 = p2
         dx = abs(x1 - x2)
         dy = abs(y1 - y2)
         return (dx + dy) + (math.sqrt(2) - 2) * min(dx, dy)
 
-    # --- Heuristic Registry ---
-    # This dictionary helps us count towards our 50 variations
     TYPES = {
         "Dijkstra (Null)": null_h,
         "A* (Manhattan)": manhattan,
@@ -262,7 +226,6 @@ class Heuristics:
 
 
 def reconstruct_path(came_from, current, draw_func):
-    """Backtracks from End Node to Start Node to draw the final path."""
     while current in came_from:
         current = came_from[current]
         current.make_path()
@@ -270,54 +233,40 @@ def reconstruct_path(came_from, current, draw_func):
 
 
 def algorithm_astar_generic(draw_func, grid, start, end, heuristic_func, is_greedy=False):
-    """
-    The Master Solver.
-    - If heuristic_func is 'null_h', this behaves as DIJKSTRA.
-    - If is_greedy is True, this behaves as GREEDY BEST-FIRST SEARCH.
-    - Otherwise, it is standard A*.
-    """
     count = 0
     open_set = PriorityQueue()
-    # (f_score, count, node)
     open_set.put((0, count, start))
     came_from = {}
-
-    # g_score: cost from start to current
     g_score = {node: float("inf") for row in grid for node in row}
     g_score[start] = 0
-
-    # f_score: g_score + h_score (heuristic)
     f_score = {node: float("inf") for row in grid for node in row}
     f_score[start] = heuristic_func(start.get_pos(), end.get_pos())
-
     open_set_hash = {start}
 
     while not open_set.empty():
-        # Allow user to quit mid-algorithm
+        # --- FIX: Safe Exit ---
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
+                sys.exit()  # Stop script immediately
+        # ----------------------
 
         current = open_set.get()[2]
         open_set_hash.remove(current)
 
         if current == end:
             reconstruct_path(came_from, end, draw_func)
-            end.make_end()  # Retain color
+            end.make_end()
             return True
 
         for neighbor in current.neighbor:
-            # Assuming distance between neighbors is 1
             temp_g_score = g_score[current] + neighbor.weight
 
             if temp_g_score < g_score[neighbor]:
                 came_from[neighbor] = current
                 g_score[neighbor] = temp_g_score
-
-                # Calculate H
                 h_score = heuristic_func(neighbor.get_pos(), end.get_pos())
 
-                # Logic Switch: Greedy ignores G, A* uses G+H
                 if is_greedy:
                     f_score[neighbor] = h_score
                 else:
@@ -338,15 +287,17 @@ def algorithm_astar_generic(draw_func, grid, start, end, heuristic_func, is_gree
 
 
 def algorithm_bfs(draw_func, grid, start, end):
-    """Breadth-First Search: Guaranteed shortest path in unweighted grid."""
     queue = deque([start])
     visited = {start}
     came_from = {}
 
     while queue:
+        # --- FIX: Safe Exit ---
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
+                sys.exit()
+        # ----------------------
 
         current = queue.popleft()
 
@@ -370,15 +321,17 @@ def algorithm_bfs(draw_func, grid, start, end):
 
 
 def algorithm_dfs(draw_func, grid, start, end):
-    """Depth-First Search: Not shortest path, but fast exploration."""
     stack = [start]
     visited = {start}
     came_from = {}
 
     while stack:
+        # --- FIX: Safe Exit ---
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
+                sys.exit()
+        # ----------------------
 
         current = stack.pop()
 
@@ -387,11 +340,7 @@ def algorithm_dfs(draw_func, grid, start, end):
             end.make_end()
             return True
 
-        # Process neighbors
-        # Randomizing neighbor order creates "Random DFS" variant
         neighbors = current.neighbor[:]
-        # random.shuffle(neighbors) # Uncomment for Randomized DFS
-
         for neighbor in neighbors:
             if neighbor not in visited:
                 visited.add(neighbor)
@@ -407,48 +356,42 @@ def algorithm_dfs(draw_func, grid, start, end):
 
 
 def algorithm_bidirectional(draw_func, grid, start, end):
-    """
-    Bidirectional Search: Meets in the middle.
-    Uses two BFS queues running simultaneously.
-    """
     start_q = deque([start])
     end_q = deque([end])
-
-    start_visited = {start: None}  # Node: Parent
+    start_visited = {start: None}
     end_visited = {end: None}
 
     while start_q and end_q:
+        # --- FIX: Safe Exit ---
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
+                sys.exit()
+        # ----------------------
 
         # 1. Expand from Start
-        curr_start = start_q.popleft()
-        for neighbor in curr_start.neighbor:
-            if neighbor not in start_visited:
-                start_visited[neighbor] = curr_start
-                start_q.append(neighbor)
-                neighbor.make_open()
-
-                # Check collision with End frontier
-                if neighbor in end_visited:
-                    # Path found! Construct both halves
-                    construct_bidirectional_path(start_visited, end_visited, neighbor, draw_func)
-                    return True
+        if start_q:
+            curr_start = start_q.popleft()
+            for neighbor in curr_start.neighbor:
+                if neighbor not in start_visited:
+                    start_visited[neighbor] = curr_start
+                    start_q.append(neighbor)
+                    neighbor.make_open()
+                    if neighbor in end_visited:
+                        construct_bidirectional_path(start_visited, end_visited, neighbor, draw_func)
+                        return True
 
         # 2. Expand from End
-        curr_end = end_q.popleft()
-        for neighbor in curr_end.neighbor:
-            if neighbor not in end_visited:
-                end_visited[neighbor] = curr_end
-                end_q.append(neighbor)
-                # Visual distinction for end-search
-                neighbor.color = (100, 255, 100)
-
-                # Check collision with Start frontier
-                if neighbor in start_visited:
-                    construct_bidirectional_path(start_visited, end_visited, neighbor, draw_func)
-                    return True
+        if end_q:
+            curr_end = end_q.popleft()
+            for neighbor in curr_end.neighbor:
+                if neighbor not in end_visited:
+                    end_visited[neighbor] = curr_end
+                    end_q.append(neighbor)
+                    neighbor.color = (100, 255, 100)  # Distinct color for backwards search
+                    if neighbor in start_visited:
+                        construct_bidirectional_path(start_visited, end_visited, neighbor, draw_func)
+                        return True
 
         draw_func()
         if curr_start != start: curr_start.make_closed()
@@ -458,14 +401,11 @@ def algorithm_bidirectional(draw_func, grid, start, end):
 
 
 def construct_bidirectional_path(start_parents, end_parents, meeting_node, draw_func):
-    # Trace back to start
     curr = meeting_node
     while curr in start_parents and start_parents[curr] is not None:
         curr = start_parents[curr]
         curr.make_path()
         draw_func()
-
-    # Trace back to end
     curr = meeting_node
     while curr in end_parents and end_parents[curr] is not None:
         curr = end_parents[curr]
@@ -473,31 +413,20 @@ def construct_bidirectional_path(start_parents, end_parents, meeting_node, draw_
         draw_func()
 
 
-"""
-ALGO-RACER: Set 3
-The Main Loop & User Interface
-"""
+# --- UI & MAIN LOOP ---
 
-# --- Configuration Lists for the "50 Algo" Combinations ---
 ALGO_TYPES = ["A* Search", "Greedy Best-First", "Dijkstra", "BFS", "DFS", "Bidirectional"]
 HEURISTIC_NAMES = ["Manhattan", "Euclidean", "Chebyshev", "Octile", "Null"]
 
 
 def draw_ui(win, current_algo, current_heuristic, diagonal, state_text):
-    """
-    Draws the control panel on the right side of the screen.
-    """
-    # UI Background
     pygame.draw.rect(win, DARK_GREY, (GRID_WIDTH, 0, UI_WIDTH, HEIGHT))
 
     # Title
     title = HEADER_FONT.render("ALGO-RACER", True, WHITE)
     win.blit(title, (GRID_WIDTH + 10, 20))
-
-    # Separator
     pygame.draw.line(win, WHITE, (GRID_WIDTH, 50), (WIDTH, 50))
 
-    # Controls Text
     controls = [
         ("Mouse Left", "Draw Wall/Start/End"),
         ("Mouse Right", "Erase"),
@@ -517,36 +446,29 @@ def draw_ui(win, current_algo, current_heuristic, diagonal, state_text):
             pygame.draw.line(win, GREY, (GRID_WIDTH, y_offset + 10), (WIDTH, y_offset + 10))
             y_offset += 20
             continue
-
-        # Render Key (Yellow)
         key_surf = FONT.render(f"[{key}]", True, YELLOW)
         win.blit(key_surf, (GRID_WIDTH + 10, y_offset))
-
-        # Render Description (White)
         desc_surf = FONT.render(desc, True, WHITE)
         win.blit(desc_surf, (GRID_WIDTH + 10, y_offset + 20))
         y_offset += 50
 
-    # Status Indicator
-    status_color = GREEN if "Finished" in state_text else RED
+    status_color = GREEN if "Finished" in state_text or "Found" in state_text else RED
     if state_text == "Running...": status_color = ORANGE
     if state_text == "Ready": status_color = BLUE
 
     status_surf = HEADER_FONT.render(f"Status: {state_text}", True, status_color)
-    win.blit(status_surf, (GRID_WIDTH + 10, HEIGHT - 80))  # Moved up slightly to make room for name
+    win.blit(status_surf, (GRID_WIDTH + 10, HEIGHT - 80))
 
-    # --- CREDIT SECTION ---
     pygame.draw.line(win, GREY, (GRID_WIDTH, HEIGHT - 45), (WIDTH, HEIGHT - 45))
-
     credit_surf = FONT.render("Created by", True, WHITE)
     win.blit(credit_surf, (GRID_WIDTH + 10, HEIGHT - 30))
-
     mazy_surf = HEADER_FONT.render("Mazy", True, YELLOW)
     win.blit(mazy_surf, (GRID_WIDTH + 90, HEIGHT - 32))
 
-def generate_random_walls(grid, prob=0.3):
-    """Randomly fills grid with walls for quick testing."""
-    for row in grid.grid:
+
+def generate_random_walls(grid_manager, prob=0.3):
+    grid_manager.clear_path()
+    for row in grid_manager.grid:
         for node in row:
             if not node.is_start() and not node.is_end():
                 if random.random() < prob:
@@ -554,55 +476,41 @@ def generate_random_walls(grid, prob=0.3):
 
 
 def main():
-    # Initialize Grid
     grid_manager = GridManager(ROWS, GRID_WIDTH)
     grid = grid_manager.grid
 
-    # Default State
     start = None
     end = None
     run = True
     started = False
 
-    # Algorithm State Indices
-    algo_idx = 0  # Index for ALGO_TYPES
-    heur_idx = 0  # Index for HEURISTIC_NAMES
-    diagonal = False  # Toggle 8-way movement
-
+    algo_idx = 0
+    heur_idx = 0
+    diagonal = False
     status_msg = "Ready"
 
     while run:
-        # Drawing Logic
         grid_manager.draw(WIN)
-
-        # Draw UI Overlay
         current_algo_name = ALGO_TYPES[algo_idx]
         current_heur_name = HEURISTIC_NAMES[heur_idx]
-
-        # If Algo is Dijkstra/BFS/DFS, heuristic doesn't apply visually
         if current_algo_name in ["Dijkstra", "BFS", "DFS"]:
             current_heur_name = "N/A"
 
         draw_ui(WIN, current_algo_name, current_heur_name, diagonal, status_msg)
         pygame.display.update()
 
-        # Event Loop
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run = False
 
-            # --- INPUT HANDLING ---
             if started:
-                # Disable input while algorithm is running
                 continue
 
-            # Mouse Input (Left Click)
-            if pygame.mouse.get_pressed()[0]:
+            if pygame.mouse.get_pressed()[0]:  # Left
                 pos = pygame.mouse.get_pos()
-                if pos[0] < GRID_WIDTH:  # Ensure we clicked inside grid
+                if pos[0] < GRID_WIDTH:
                     row, col = grid_manager.get_clicked_pos(pos)
                     node = grid[row][col]
-
                     if not start and node != end:
                         start = node
                         start.make_start()
@@ -614,8 +522,7 @@ def main():
                     elif node != end and node != start:
                         node.make_barrier()
 
-            # Mouse Input (Right Click - Erase)
-            elif pygame.mouse.get_pressed()[2]:
+            elif pygame.mouse.get_pressed()[2]:  # Right
                 pos = pygame.mouse.get_pos()
                 if pos[0] < GRID_WIDTH:
                     row, col = grid_manager.get_clicked_pos(pos)
@@ -626,65 +533,56 @@ def main():
                     elif node == end:
                         end = None
 
-            # Keyboard Input
             if event.type == pygame.KEYDOWN:
-
-                # START ALGORITHM (SPACE)
                 if event.key == pygame.K_SPACE and start and end:
                     started = True
                     status_msg = "Running..."
-
-                    # Update neighbors based on current diagonal setting
                     for row in grid:
                         for node in row:
                             node.update_neighbors(grid, diagonal)
 
-                    # Lambda function for drawing during algo execution
                     draw_lambda = lambda: (grid_manager.draw(WIN),
                                            draw_ui(WIN, current_algo_name, current_heur_name, diagonal, "Running..."),
                                            pygame.display.update())
 
-                    # --- ALGORITHM ROUTER ---
                     algo_type = ALGO_TYPES[algo_idx]
                     heuristic_func = Heuristics.TYPES.get(f"A* ({HEURISTIC_NAMES[heur_idx]})", Heuristics.manhattan)
 
+                    # Map heuristic choice specifically for Generic call
+                    h_choice = HEURISTIC_NAMES[heur_idx]
+                    if h_choice == "Manhattan":
+                        heuristic_func = Heuristics.manhattan
+                    elif h_choice == "Euclidean":
+                        heuristic_func = Heuristics.euclidean
+                    elif h_choice == "Chebyshev":
+                        heuristic_func = Heuristics.chebyshev
+                    elif h_choice == "Octile":
+                        heuristic_func = Heuristics.octile
+                    else:
+                        heuristic_func = Heuristics.null_h
+
                     found = False
-
                     if algo_type == "A* Search":
-                        # Standard A*
                         found = algorithm_astar_generic(draw_lambda, grid, start, end, heuristic_func, is_greedy=False)
-
                     elif algo_type == "Greedy Best-First":
-                        # Greedy (ignores G cost)
                         found = algorithm_astar_generic(draw_lambda, grid, start, end, heuristic_func, is_greedy=True)
-
                     elif algo_type == "Dijkstra":
-                        # Dijkstra is just A* with Null heuristic
                         found = algorithm_astar_generic(draw_lambda, grid, start, end, Heuristics.null_h,
                                                         is_greedy=False)
-
                     elif algo_type == "BFS":
                         found = algorithm_bfs(draw_lambda, grid, start, end)
-
                     elif algo_type == "DFS":
                         found = algorithm_dfs(draw_lambda, grid, start, end)
-
                     elif algo_type == "Bidirectional":
                         found = algorithm_bidirectional(draw_lambda, grid, start, end)
 
-                    if found:
-                        status_msg = "Path Found!"
-                    else:
-                        status_msg = "No Path!"
-
+                    status_msg = "Path Found!" if found else "No Path!"
                     started = False
 
-                # CLEAR PATH (C) - Keeps walls
                 if event.key == pygame.K_c:
                     grid_manager.clear_path()
                     status_msg = "Ready"
 
-                # RESET GRID (R) - Deletes walls
                 if event.key == pygame.K_r:
                     grid_manager.clear_all()
                     grid = grid_manager.grid
@@ -692,24 +590,20 @@ def main():
                     end = None
                     status_msg = "Ready"
 
-                # RANDOM MAZE (M)
                 if event.key == pygame.K_m:
-                    grid_manager.clear_path()
                     generate_random_walls(grid_manager)
 
-                # TOGGLE ALGORITHM (A)
                 if event.key == pygame.K_a:
                     algo_idx = (algo_idx + 1) % len(ALGO_TYPES)
 
-                # TOGGLE HEURISTIC (H)
                 if event.key == pygame.K_h:
                     heur_idx = (heur_idx + 1) % len(HEURISTIC_NAMES)
 
-                # TOGGLE DIAGONAL (D)
                 if event.key == pygame.K_d:
                     diagonal = not diagonal
 
     pygame.quit()
+    sys.exit()
 
 
 if __name__ == "__main__":
